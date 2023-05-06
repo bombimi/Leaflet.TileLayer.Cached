@@ -1,12 +1,11 @@
 // HTMLCanvasElement.toBlob() polyfill
 // copy-pasted off https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob
-import PouchDB from 'pouchdb';
 
 if (!HTMLCanvasElement.prototype.toBlob) {
 	Object.defineProperty(HTMLCanvasElement.prototype, "toBlob", {
-		value: function(callback, type, quality) {
+		value: function (callback, type, quality) {
 			var dataURL = this.toDataURL(type, quality).split(",")[1];
-			setTimeout(function() {
+			setTimeout(function () {
 				var binStr = atob(dataURL),
 					len = binStr.length,
 					arr = new Uint8Array(len);
@@ -21,13 +20,11 @@ if (!HTMLCanvasElement.prototype.toBlob) {
 	});
 }
 
-L.TileLayer.addInitHook(function() {
+L.TileLayer.addInitHook(function () { 
 	if (!this.options.useCache) {
 		this._db = null;
 		return;
 	}
-
-	this._db = new PouchDB("offline-tiles");
 });
 
 // 🍂namespace TileLayer
@@ -52,15 +49,28 @@ L.TileLayer.prototype.options.cacheFormat = "image/png";
 // Maximum age of the cache, in milliseconds
 L.TileLayer.prototype.options.cacheMaxAge = 24 * 3600 * 1000;
 
+L.TileLayer.prototype.options.cacheDb = undefined;
+
 L.TileLayer.include({
 	// Overwrites L.TileLayer.prototype.createTile
-	createTile: function(coords, done) {
+	createTile: function (coords, done) {
 		var tile = document.createElement("img");
 
 		tile.onerror = L.bind(this._tileOnError, this, done, tile);
 
-		if (this.options.crossOrigin) {
-			tile.crossOrigin = "";
+		// if (this.options.crossOrigin) {
+		// 	tile.crossOrigin = "";
+		// }
+
+		if (this.options.crossOrigin || this.options.crossOrigin === "") {
+			tile.crossOrigin =
+				this.options.crossOrigin === true ? "" : this.options.crossOrigin;
+		}
+
+		// for this new option we follow the documented behavior
+		// more closely by only setting the property when string
+		if (typeof this.options.referrerPolicy === "string") {
+			tile.referrerPolicy = this.options.referrerPolicy;
 		}
 
 		/*
@@ -73,9 +83,8 @@ L.TileLayer.include({
 		var cacheName = this._maskURL(tileUrl);
 
 		if (this.options.useCache) {
-			this._db.get(
+			this.options.cacheDb.get(
 				cacheName,
-				{ revs_info: true },
 				this._onCacheLookup(tile, tileUrl, done)
 			);
 		} else {
@@ -86,7 +95,7 @@ L.TileLayer.include({
 
 		return tile;
 	},
-	_maskURL: function(tileUrl) {
+	_maskURL: function (tileUrl) {
 		// Mask the access token.
 		if (this.options.cacheURLMask) {
 			var cacheName = tileUrl.replace(this.options.cacheURLMask, "");
@@ -97,8 +106,8 @@ L.TileLayer.include({
 	},
 	// Returns a callback (closure over tile/key/originalSrc) to be run when the DB
 	//   backend is finished with a fetch operation.
-	_onCacheLookup: function(tile, tileUrl, done) {
-		return function(err, data) {
+	_onCacheLookup: function (tile, tileUrl, done) {
+		return function (err, data) {
 			if (data) {
 				return this._onCacheHit(tile, tileUrl, data, done);
 			} else {
@@ -107,52 +116,49 @@ L.TileLayer.include({
 		}.bind(this);
 	},
 
-	_onCacheHit: function(tile, tileUrl, data, done) {
+	_onCacheHit: function (tile, tileUrl, data, done) {
 		this.fire("tilecachehit", {
 			tile: tile,
 			url: tileUrl,
 		});
 
 		// Read the attachment as blob
-		this._db.getAttachment(data._id, "tile").then(
-			function(blob) {
-				var url = URL.createObjectURL(blob);
 
-				if (
-					Date.now() > data.timestamp + this.options.cacheMaxAge &&
-					!this.options.useOnlyCache
-				) {
-					// Tile is too old, try to refresh it
-					console.log("Tile is too old: ", tileUrl);
+		var url = URL.createObjectURL(data.image);
 
-					if (this.options.saveToCache) {
-						tile.onload = L.bind(
-							this._saveTile,
-							this,
-							tile,
-							tileUrl,
-							data._revs_info[0].rev,
-							done
-						);
-					}
-					tile.crossOrigin = "Anonymous";
-					tile.src = tileUrl;
-					tile.onerror = function(ev) {
-						// If the tile is too old but couldn't be fetched from the network,
-						//   serve the one still in cache.
-						this.src = url;
-					};
-				} else {
-					// Serve tile from cached data
-					//console.log('Tile is cached: ', tileUrl);
-					tile.onload = L.bind(this._tileOnLoad, this, done, tile);
-					tile.src = url;
-				}
-			}.bind(this)
-		);
+		if (
+			Date.now() > data.timestamp + this.options.cacheMaxAge &&
+			!this.options.useOnlyCache
+		) {
+			// Tile is too old, try to refresh it
+			console.log("Tile is too old: ", tileUrl);
+
+			if (this.options.saveToCache) {
+				tile.onload = L.bind(
+					this._saveTile,
+					this,
+					tile,
+					tileUrl,
+					data?._revs_info[0].rev ?? undefined,
+					done
+				);
+			}
+			tile.crossOrigin = "Anonymous";
+			tile.src = tileUrl;
+			tile.onerror = function (ev) {
+				// If the tile is too old but couldn't be fetched from the network,
+				//   serve the one still in cache.
+				this.src = url;
+			};
+		} else {
+			// Serve tile from cached data
+			//console.log('Tile is cached: ', tileUrl);
+			tile.onload = L.bind(this._tileOnLoad, this, done, tile);
+			tile.src = url;
+		}
 	},
 
-	_onCacheMiss: function(tile, tileUrl, done) {
+	_onCacheMiss: function (tile, tileUrl, done) {
 		this.fire("tilecachemiss", {
 			tile: tile,
 			url: tileUrl,
@@ -184,7 +190,7 @@ L.TileLayer.include({
 
 	// Async'ly saves the tile as a PouchDB attachment
 	// Will run the done() callback (if any) when finished.
-	_saveTile: function(tile, tileUrl, existingRevision, done) {
+	_saveTile: function (tile, tileUrl, existingRevision, done) {
 		if (!this.options.saveToCache) {
 			return;
 		}
@@ -199,32 +205,17 @@ L.TileLayer.include({
 		var format = this.options.cacheFormat;
 
 		canvas.toBlob(
-			function(blob) {
+			function (blob) {
 				var maskedId = this._maskURL(tileUrl);
-				this._db
-					.put({
-						_id: maskedId,
-						_rev: existingRevision,
-						timestamp: Date.now(),
-					})
-					.then(
-						function(status) {
-							return this._db.putAttachment(
-								maskedId,
-								"tile",
-								status.rev,
-								blob,
-								format
-							);
-						}.bind(this)
-					)
-					.then(function(resp) {
+				this.options.cacheDb
+					.put(maskedId, existingRevision, Date.now(), format, blob)
+					.then(function (resp) {
 						if (done) {
 							done();
 						}
 					})
-					.catch(function() {
-						// Saving the tile to the cache might have failed, 
+					.catch(function () {
+						// Saving the tile to the cache might have failed,
 						// but the tile itself has been loaded.
 						if (done) {
 							done();
@@ -239,7 +230,7 @@ L.TileLayer.include({
 	// 🍂method seed(bbox: LatLngBounds, minZoom: Number, maxZoom: Number): this
 	// Starts seeding the cache given a bounding box and the minimum/maximum zoom levels
 	// Use with care! This can spawn thousands of requests and flood tileservers!
-	seed: function(bbox, minZoom, maxZoom) {
+	seed: function (bbox, minZoom, maxZoom) {
 		if (!this.options.useCache) return;
 		if (minZoom > maxZoom) return;
 		if (!this._map) return;
@@ -278,13 +269,13 @@ L.TileLayer.include({
 		return this;
 	},
 
-	_createTile: function() {
+	_createTile: function () {
 		return document.createElement("img");
 	},
 
 	// Modified L.TileLayer.getTileUrl, this will use the zoom given by the parameter coords
 	//  instead of the maps current zoomlevel.
-	_getTileUrl: function(coords) {
+	_getTileUrl: function (coords) {
 		var zoom = coords.z;
 		if (this.options.zoomReverse) {
 			zoom = this.options.maxZoom - zoom;
@@ -317,7 +308,7 @@ L.TileLayer.include({
 	// Uses a defined tile to eat through one item in the queue and
 	//   asynchronously recursively call itself when the tile has
 	//   finished loading.
-	_seedOneTile: function(tile, remaining, seedData) {
+	_seedOneTile: function (tile, remaining, seedData) {
 		if (!remaining.length) {
 			this.fire("seedend", seedData);
 			return;
@@ -332,12 +323,12 @@ L.TileLayer.include({
 
 		var url = remaining.shift();
 
-		this._db.get(
+		this.options.cacheDb.get(
 			url,
-			function(err, data) {
+			function (err, data) {
 				if (!data) {
 					/// FIXME: Do something on tile error!!
-					tile.onload = function(ev) {
+					tile.onload = function (ev) {
 						this._saveTile(tile, url, null); //(ev)
 						this._seedOneTile(tile, remaining, seedData);
 					}.bind(this);
