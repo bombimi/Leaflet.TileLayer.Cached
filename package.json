@@ -1,7 +1,7 @@
 {
-  "name": "leaflet.tilelayer.pouchdbcached",
+  "name": "leaflet.tilelayer.cached",
   "version": "1.0.0",
-  "description": "Allows all TileLayers to cache into PouchDB for offline use",
+  "description": "Allows all TileLayers to cached for offline use",
   "main": "L.TileLayer.PouchDBCached.js",
   "scripts": {
     "lintfix": "prettier --write *.js",
@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MazeMap/Leaflet.TileLayer.PouchDBCached.git"
+    "url": "git+https://https://github.com/bombimi/Leaflet.TileLayer.Cached.git"
   },
   "keywords": [
     "leaflet",
-    "pouchdb"
+    "cached"
   ],
   "author": "Iván Sánchez Ortega <ivan@mazemap.no>",
   "license": "MIT",
